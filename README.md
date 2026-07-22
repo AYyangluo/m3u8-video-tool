@@ -18,11 +18,21 @@ python main.py
 ```
 
 ## 打包
-双击运行 build.bat 或执行：
+
+### Windows
+双击运行 `build.bat` 或执行：
 ```bash
 pyinstaller m3u8_tool.spec --noconfirm
 ```
-打包后的可执行文件位于 dist/M3U8VideoTool.exe
+打包后的可执行文件位于 `dist/M3U8VideoTool.exe`
+
+### Linux
+运行 `./build.sh` 或执行：
+```bash
+chmod +x build.sh
+./build.sh
+```
+打包后的可执行文件位于 `dist/M3U8VideoTool`
 
 ## 功能
 - m3u8视频在线播放

@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller 打包配置文件。
 
-用于将 M3U8 视频浏览加速下载工具打包为 Windows 单文件可执行程序。
+用于将 M3U8 视频浏览加速下载工具打包为单文件可执行程序。
+支持 Windows 和 Linux 平台。
 入口: main.py
-输出: dist/M3U8VideoTool.exe
+Windows 输出: dist/M3U8VideoTool.exe
+Linux 输出: dist/M3U8VideoTool
 """
 
 from PyInstaller.utils.hooks import (
