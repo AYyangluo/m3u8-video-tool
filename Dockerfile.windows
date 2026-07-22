@@ -39,11 +39,11 @@ RUN wine wineboot --init && \
 
 # 下载Windows Python嵌入版（embeddable zip），直接解压到 C:\Python311
 # 嵌入版无需安装，避免Wine下MSI安装失败的问题
-# 使用淘宝npmmirror镜像，文件路径为 /python/release/<version>/<filename>
+# 注意文件名格式: python-<version>-embed-amd64.zip（embed在amd64前面）
 ARG PYTHON_VERSION=3.11.9
 RUN set -ex && \
     wget --timeout=120 --tries=3 \
-        "https://registry.npmmirror.com/-/binary/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64-embed.zip" \
+        "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip" \
         -O /tmp/python-embed.zip && \
     mkdir -p "${WINEPREFIX}/drive_c/Python311" && \
     unzip -q /tmp/python-embed.zip -d "${WINEPREFIX}/drive_c/Python311" && \
@@ -55,7 +55,7 @@ RUN set -ex && \
 # 下载get-pip.py并安装pip（Wine下用Windows Python运行）
 RUN set -ex && \
     wget --timeout=120 --tries=3 \
-        "https://registry.npmmirror.com/-/binary/python/get-pip/get-pip.py" \
+        "https://bootstrap.pypa.io/get-pip.py" \
         -O /tmp/get-pip.py && \
     cp /tmp/get-pip.py "${WINEPREFIX}/drive_c/Python311/get-pip.py" && \
     wine "C:\\Python311\\python.exe" "C:\\Python311\\get-pip.py" -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com && \
