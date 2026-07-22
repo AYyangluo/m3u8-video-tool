@@ -45,10 +45,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # 安装Python依赖
-# 增加超时时间和重试次数，应对网络不稳定
+# 使用阿里云PyPI镜像源，增加超时时间和重试次数，应对网络不稳定
 RUN pip install --no-cache-dir \
     --timeout 120 \
     --retries 5 \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
     -r requirements.txt
 
 # 复制项目文件
