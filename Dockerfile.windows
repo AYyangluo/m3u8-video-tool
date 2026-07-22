@@ -1,0 +1,67 @@
+# M3U8 Video Tool - Windows 交叉编译 Dockerfile
+# 在Linux环境下通过Wine运行Windows Python，交叉编译出Windows .exe
+#
+# 使用方式:
+#   docker build -f Dockerfile.windows -t m3u8-video-tool-win-builder .
+#   docker run --rm -v "$(pwd)/dist:/app/dist" m3u8-video-tool-win-builder
+#
+
+FROM debian:bookworm-slim
+
+LABEL maintainer="m3u8-tool"
+LABEL description="M3U8视频工具 - Linux下交叉编译Windows产物"
+
+# 配置阿里云Debian源
+RUN rm -f /etc/apt/sources.list.d/debian.sources && \
+    echo "deb https://mirrors.aliyun.com/debian bookworm main non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian bookworm-updates main non-free non-free-firmware" >> /etc/apt/sources.list
+
+# 安装Wine和工具
+# Wine用于在Linux上运行Windows Python和PyInstaller
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wine \
+    wine64 \
+    wine32 \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Wine环境变量
+ENV WINEDEBUG=-all
+ENV WINEPREFIX=/root/.wine
+
+# 初始化Wine（首次运行会创建prefix）
+RUN wine wineboot --init 2>/dev/null; true
+
+# 下载并安装Windows Python（静默安装）
+ARG PYTHON_VERSION=3.11.9
+RUN wget -q "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe" \
+        -O /tmp/python-installer.exe && \
+    wine /tmp/python-installer.exe /quiet \
+        InstallAllUsers=1 \
+        PrependPath=1 \
+        Include_pip=1 \
+        TargetDir="C:\Python311" && \
+    rm /tmp/python-installer.exe
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+# 安装Python依赖（通过Wine的Windows pip）
+RUN wine pip install --no-cache-dir \
+    --timeout 120 \
+    --retries 5 \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
+    -r requirements.txt
+
+# 复制项目文件
+COPY . .
+
+# 容器启动时执行打包
+# Wine下运行Windows Python，sys.platform=='win32'，spec文件会自动启用Windows配置
+ENTRYPOINT ["wine", "python", "-m", "PyInstaller", "m3u8_tool.spec", "--noconfirm", "--distpath", "/app/dist"]

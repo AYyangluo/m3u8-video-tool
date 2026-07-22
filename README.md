@@ -35,7 +35,8 @@ chmod +x build.sh
 打包后的可执行文件位于 `dist/M3U8VideoTool`
 
 ### Docker
-使用 Docker 构建 Linux 可执行文件：
+
+**构建Linux产物**：
 ```bash
 # 构建镜像
 docker build -t m3u8-video-tool-builder .
@@ -43,6 +44,16 @@ docker build -t m3u8-video-tool-builder .
 # 运行构建，将产物挂载到本地dist目录
 docker run --rm -v "$(pwd)/dist:/app/dist" m3u8-video-tool-builder
 ```
+
+**交叉编译Windows产物**（Linux环境下通过Wine打包出.exe）：
+```bash
+# 构建镜像
+docker build -f Dockerfile.windows -t m3u8-video-tool-win-builder .
+
+# 运行构建，将产物挂载到本地dist目录
+docker run --rm -v "$(pwd)/dist:/app/dist" m3u8-video-tool-win-builder
+```
+产物为 `dist/M3U8VideoTool.exe`
 
 ## 功能
 - m3u8视频在线播放
