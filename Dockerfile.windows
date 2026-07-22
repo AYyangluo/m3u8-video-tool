@@ -19,31 +19,36 @@ RUN apt-get update && \
     echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main non-free non-free-firmware" >> /etc/apt/sources.list && \
     echo "deb https://mirrors.aliyun.com/debian bookworm-updates main non-free non-free-firmware" >> /etc/apt/sources.list
 
-# 安装Wine（需要i386架构支持）
+# 安装Wine（需要i386架构支持）和winbind（Wine运行Windows程序需要）
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     wine \
     wine64 \
     wine32 \
+    winbind \
     && rm -rf /var/lib/apt/lists/*
 
 # Wine环境变量
 ENV WINEDEBUG=-all
 ENV WINEPREFIX=/root/.wine
 
-# 初始化Wine（首次运行会创建prefix）
-RUN wine wineboot --init 2>/dev/null; true
+# 初始化Wine（首次运行会创建prefix），等待完成
+RUN wine wineboot --init && \
+    wineserver --wait
 
-# 下载并安装Windows Python（静默安装）
+# 下载Windows Python（使用华为云镜像加速）并安装
 ARG PYTHON_VERSION=3.11.9
-RUN wget -q "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe" \
+RUN set -ex && \
+    wget --timeout=120 --tries=3 \
+        "https://mirrors.huaweicloud.com/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe" \
         -O /tmp/python-installer.exe && \
     wine /tmp/python-installer.exe /quiet \
         InstallAllUsers=1 \
         PrependPath=1 \
         Include_pip=1 \
-        TargetDir="C:\Python311" && \
+        TargetDir="C:\\Python311" && \
+    wineserver --wait && \
     rm /tmp/python-installer.exe
 
 WORKDIR /app
@@ -51,7 +56,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # 安装Python依赖（通过Wine的Windows pip）
-RUN wine pip install --no-cache-dir \
+RUN wine "C:\\Python311\\python.exe" -m pip install --no-cache-dir \
     --timeout 120 \
     --retries 5 \
     -i https://mirrors.aliyun.com/pypi/simple/ \
@@ -63,4 +68,4 @@ COPY . .
 
 # 容器启动时执行打包
 # Wine下运行Windows Python，sys.platform=='win32'，spec文件会自动启用Windows配置
-ENTRYPOINT ["wine", "python", "-m", "PyInstaller", "m3u8_tool.spec", "--noconfirm", "--distpath", "/app/dist"]
+ENTRYPOINT ["wine", "C:\\Python311\\python.exe", "-m", "PyInstaller", "m3u8_tool.spec", "--noconfirm", "--distpath", "/app/dist"]
