@@ -11,9 +11,9 @@ FROM debian:bookworm-slim
 LABEL maintainer="m3u8-tool"
 LABEL description="M3U8视频工具 - Linux下交叉编译Windows产物"
 
-# 先用默认源安装基础工具（ca-certificates、wget），再换阿里云HTTPS源
+# 先用默认源安装基础工具（ca-certificates、wget、unzip），再换阿里云HTTPS源
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates wget && \
+    apt-get install -y --no-install-recommends ca-certificates wget unzip && \
     rm -f /etc/apt/sources.list.d/debian.sources && \
     echo "deb https://mirrors.aliyun.com/debian bookworm main non-free non-free-firmware" > /etc/apt/sources.list && \
     echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main non-free non-free-firmware" >> /etc/apt/sources.list && \
@@ -37,19 +37,29 @@ ENV WINEPREFIX=/root/.wine
 RUN wine wineboot --init && \
     wineserver --wait
 
-# 下载Windows Python（使用华为云镜像加速）并安装
+# 下载Windows Python嵌入版（embeddable zip），直接解压到 C:\Python311
+# 嵌入版无需安装，避免Wine下MSI安装失败的问题
 ARG PYTHON_VERSION=3.11.9
 RUN set -ex && \
     wget --timeout=120 --tries=3 \
-        "https://mirrors.huaweicloud.com/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe" \
-        -O /tmp/python-installer.exe && \
-    wine /tmp/python-installer.exe /quiet \
-        InstallAllUsers=1 \
-        PrependPath=1 \
-        Include_pip=1 \
-        TargetDir="C:\\Python311" && \
+        "https://mirrors.huaweicloud.com/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64-embed.zip" \
+        -O /tmp/python-embed.zip && \
+    mkdir -p "${WINEPREFIX}/drive_c/Python311" && \
+    unzip -q /tmp/python-embed.zip -d "${WINEPREFIX}/drive_c/Python311" && \
+    rm /tmp/python-embed.zip && \
+    # 嵌入版默认禁用了site模块，需要打开才能用pip
+    PYTHON_PTH="${WINEPREFIX}/drive_c/Python311/python311._pth" && \
+    sed -i 's/^#import site/import site/' "$PYTHON_PTH"
+
+# 下载get-pip.py并安装pip（Wine下用Windows Python运行）
+RUN set -ex && \
+    wget --timeout=120 --tries=3 \
+        "https://bootstrap.pypa.io/get-pip.py" \
+        -O /tmp/get-pip.py && \
+    cp /tmp/get-pip.py "${WINEPREFIX}/drive_c/Python311/get-pip.py" && \
+    wine "C:\\Python311\\python.exe" "C:\\Python311\\get-pip.py" && \
     wineserver --wait && \
-    rm /tmp/python-installer.exe
+    rm /tmp/get-pip.py
 
 WORKDIR /app
 
