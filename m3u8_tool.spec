@@ -1,13 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller 打包配置文件。
 
-用于将 M3U8 视频浏览加速下载工具打包为单文件可执行程序。
+用于将 M3U8 视频浏览加速下载工具打包为可执行程序。
 支持 Windows 和 Linux 平台。
 入口: main.py
 Windows 输出: dist/M3U8VideoTool.exe
 Linux 输出: dist/M3U8VideoTool
 """
 
+import sys
 from PyInstaller.utils.hooks import (
     collect_submodules,
     collect_data_files,
@@ -15,6 +16,9 @@ from PyInstaller.utils.hooks import (
 )
 
 block_cipher = None
+
+# 平台判断
+IS_WINDOWS = sys.platform == 'win32'
 
 # ===== 收集 ffpyplayer 的子模块、数据文件与动态库（依赖的 dll 等） =====
 ffpyplayer_hiddenimports = collect_submodules('ffpyplayer')
@@ -74,10 +78,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=IS_WINDOWS,          # Linux下UPX压缩易破坏二进制，仅Windows启用
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # windowed 模式：不显示控制台窗口
+    console=IS_WINDOWS,      # Linux下需要console模式以便调试和捕获错误
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
