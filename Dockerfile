@@ -54,7 +54,5 @@ RUN pip install --no-cache-dir \
 # 复制项目文件
 COPY . .
 
-# 运行PyInstaller打包
-# --noconfirm: 不确认覆盖
-# --distpath: 指定输出目录
-RUN python -m PyInstaller m3u8_tool.spec --noconfirm --distpath /app/dist
+# 容器启动时执行打包（产物输出到 /app/dist，通过 volume 挂载到宿主机）
+ENTRYPOINT ["python", "-m", "PyInstaller", "m3u8_tool.spec", "--noconfirm", "--distpath", "/app/dist"]
