@@ -19,7 +19,12 @@ LABEL description="M3U8视频浏览加速下载工具 - Docker构建环境"
 
 # 设置工作目录
 WORKDIR /app
-
+# 清除新格式文件，直接写入传统阿里云源
+RUN rm -f /etc/apt/sources.list.d/debian.sources && \
+    echo "deb https://mirrors.aliyun.com/debian bookworm main non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian bookworm-updates main non-free non-free-firmware" >> /etc/apt/sources.list && \
+    apt-get update && apt-get install -y gcc
 # 安装系统依赖
 # - libgl1-mesa-glx: OpenGL支持（ffpyplayer需要）
 # - libglib2.0-0: GLib依赖
