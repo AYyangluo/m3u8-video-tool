@@ -3,15 +3,17 @@ import threading
 import time
 
 # ===== SDL 环境变量设置（必须在 ffpyplayer/SDL2 库加载之前设置）=====
-# ffpyplayer 内置 SDL2，在打包成 exe 后，SDL2 找不到合适的音频/视频驱动
+# ffpyplayer 内置 SDL2，在打包成 exe 后，SDL2 找不到合适的音频驱动
 # 会导致进程崩溃（C 层段错误，Python 无法捕获）。
-# 使用 dummy 驱动可避免 SDL 硬件初始化崩溃：
-#   - SDL_AUDIODRIVER=dummy：禁用真实音频设备初始化
-#   - SDL_VIDEODRIVER=dummy：禁用真实视频设备初始化（我们用 PyQt6 渲染帧）
+# 策略：
+#   - SDL_AUDIODRIVER=dummy：禁用真实音频设备初始化（音频设备初始化最易崩溃）
+#     我们当前场景不需要播放声音，用 dummy 驱动即可
+#   - SDL_VIDEODRIVER：保持默认！不能设为 dummy，否则 ffpyplayer 内部
+#     视频解码管线无法工作，表现为"点击播放无效果"
+#     改用 ff_opts 的 nodisp=True 来禁用 SDL 弹出的视频窗口
+#   - SDL_NO_SIGNAL_HANDLERS=1：避免 SDL 信号处理与 Python 冲突
 # 仅在未显式设置时覆盖，避免影响用户已有配置
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
-os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-# 禁用 SDL SDL2 的某些可能导致崩溃的特性
 os.environ.setdefault("SDL_NO_SIGNAL_HANDLERS", "1")
 
 from src.utils.config import Config
@@ -183,6 +185,8 @@ class M3U8Player:
         - val 为 (img, pts)：有帧可渲染
         """
         logger.info("帧读取线程启动")
+        frame_count = 0
+        none_count = 0
         while self._running and self._player is not None:
             try:
                 frame, val = self._player.get_frame()
@@ -193,7 +197,7 @@ class M3U8Player:
 
             # 播放结束
             if val == "eof":
-                logger.info("播放结束(eof)")
+                logger.info(f"播放结束(eof), 共读取 {frame_count} 帧")
                 self._state = "ended"
                 self._notify_state()
                 if self.on_eof:
@@ -205,6 +209,13 @@ class M3U8Player:
 
             # 缓冲中，短暂等待后重试
             if val is None:
+                none_count += 1
+                # 每 100 次缓冲打印一次日志，避免刷屏
+                if none_count % 100 == 1:
+                    logger.debug(
+                        f"缓冲中(连续 {none_count} 次), "
+                        f"frame={frame}"
+                    )
                 time.sleep(0.01)
                 continue
 
@@ -212,17 +223,25 @@ class M3U8Player:
             try:
                 img, pts = val
             except (TypeError, ValueError):
+                logger.warning(f"帧数据格式异常: val={val!r}")
                 time.sleep(0.01)
                 continue
 
             # 将帧转换为RGB字节数据并回调
             data, width, height = self._frame_to_bytes(img)
+            frame_count += 1
+            # 每 30 帧打印一次日志，便于观察解码进度
+            if frame_count % 30 == 1:
+                logger.info(
+                    f"解码帧 #{frame_count}: {width}x{height}, "
+                    f"pts={pts}, data={len(data) if data else 0} bytes"
+                )
             if data is not None and self.on_frame is not None:
                 try:
                     self.on_frame(data, width, height)
                 except Exception:
                     logger.exception("on_frame 回调异常")
-        logger.info("帧读取线程退出")
+        logger.info(f"帧读取线程退出, 共读取 {frame_count} 帧")
 
     def _frame_to_bytes(self, img):
         """将ffpyplayer返回的帧对象转换为RGB字节数据。

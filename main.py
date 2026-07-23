@@ -5,12 +5,15 @@ import tempfile
 import atexit
 
 # ===== SDL 环境变量设置（必须在任何 ffpyplayer/SDL2 库加载之前设置）=====
-# ffpyplayer 内置 SDL2，在打包成 exe 后，SDL2 找不到合适的音频/视频驱动
+# ffpyplayer 内置 SDL2，在打包成 exe 后，SDL2 找不到合适的音频驱动
 # 会导致进程崩溃（C 层段错误，Python 无法捕获，生成 .dmp 文件）。
-# 使用 dummy 驱动可避免 SDL 硬件初始化崩溃。
+# 策略：
+#   - SDL_AUDIODRIVER=dummy：禁用真实音频设备初始化（最易崩溃的部分）
+#   - SDL_VIDEODRIVER：保持默认！设为 dummy 会导致视频解码管线失效
+#     （表现为点击播放无效果）。改用 ff_opts 的 nodisp=True 禁用 SDL 窗口
+#   - SDL_NO_SIGNAL_HANDLERS=1：避免 SDL 信号处理冲突
 # 这是最早期设置点，确保后续任何模块 import ffpyplayer 时 SDL 已配置好。
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
-os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_NO_SIGNAL_HANDLERS", "1")
 
 
