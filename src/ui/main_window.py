@@ -12,6 +12,9 @@ from src.ui.download_widget import DownloadWidget
 from src.ui.settings_dialog import SettingsDialog
 from src.core.downloader import Downloader
 from src.utils.config import Config
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class MainWindow(QMainWindow):
@@ -103,6 +106,8 @@ class MainWindow(QMainWindow):
 
         # ===== 状态栏 =====
         self.statusBar().showMessage("就绪")
+        # 日志文件路径（由 main.py 设置）
+        self._log_file_path = ""
 
     def _build_control_bar(self):
         """构建底部控制栏布局。
@@ -197,10 +202,15 @@ class MainWindow(QMainWindow):
         if not url:
             self.statusBar().showMessage("请输入m3u8链接")
             return
+        logger.info(f"点击播放按钮: url={url}")
         self.current_url = url
         self.statusBar().showMessage(f"正在加载: {url}")
         # 调用PlayerWidget播放m3u8链接（内部会集成M3U8Player）
-        self.player_widget.play(url)
+        try:
+            self.player_widget.play(url)
+        except Exception:
+            logger.exception(f"播放调用异常: url={url}")
+            self.statusBar().showMessage("播放失败，请查看日志文件 m3u8_tool.log")
 
     def _on_download_clicked(self):
         """点击下载按钮：从输入框获取URL并启动下载任务。"""
@@ -436,6 +446,7 @@ class MainWindow(QMainWindow):
 
     def _on_error_occurred(self, error_msg):
         """播放器错误：显示错误信息并恢复占位提示。"""
+        logger.error(f"播放器错误: {error_msg}")
         self.statusBar().showMessage(f"错误: {error_msg}")
         self.play_pause_button.setText("播放")
         self.player_widget.set_placeholder_visible(True)
@@ -491,6 +502,16 @@ class MainWindow(QMainWindow):
         else:
             current_ms = 0
         self.current_time_label.setText(self._format_time(current_ms))
+
+    def set_log_file_path(self, path):
+        """设置日志文件路径，便于用户在 UI 上查看。
+
+        Args:
+            path: 日志文件绝对路径
+        """
+        self._log_file_path = path
+        if path:
+            logger.info(f"日志文件路径: {path}")
 
     def closeEvent(self, event):
         """窗口关闭时清理资源：停止播放器并取消所有活动下载。"""
