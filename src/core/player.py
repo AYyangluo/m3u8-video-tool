@@ -2,6 +2,18 @@ import os
 import threading
 import time
 
+# ===== SDL 环境变量设置（必须在 ffpyplayer/SDL2 库加载之前设置）=====
+# ffpyplayer 内置 SDL2，在打包成 exe 后，SDL2 找不到合适的音频/视频驱动
+# 会导致进程崩溃（C 层段错误，Python 无法捕获）。
+# 使用 dummy 驱动可避免 SDL 硬件初始化崩溃：
+#   - SDL_AUDIODRIVER=dummy：禁用真实音频设备初始化
+#   - SDL_VIDEODRIVER=dummy：禁用真实视频设备初始化（我们用 PyQt6 渲染帧）
+# 仅在未显式设置时覆盖，避免影响用户已有配置
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+# 禁用 SDL SDL2 的某些可能导致崩溃的特性
+os.environ.setdefault("SDL_NO_SIGNAL_HANDLERS", "1")
+
 from src.utils.config import Config
 from src.utils.logger import get_logger
 
@@ -132,10 +144,13 @@ class M3U8Player:
                 os.makedirs(self._cache_dir, exist_ok=True)
 
             # 构造ff_opts：缓存大小、缓存目录、低延迟标志
+            # - nodisp：禁用 SDL 视频显示窗口（我们用 PyQt6 渲染帧，不需要 SDL 窗口）
+            #   不加此选项时，SDL 会尝试创建显示窗口，在打包 exe 后可能崩溃
             ff_opts = {
                 "cache_size": self._cache_size,
                 "cache_dir": self._cache_dir,
                 "fflags": "nobuffer",
+                "nodisp": True,
             }
 
             logger.debug(f"创建 MediaPlayer: ff_opts={ff_opts}")
