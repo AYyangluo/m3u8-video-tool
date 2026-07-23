@@ -3,6 +3,9 @@ import threading
 import time
 
 from src.utils.config import Config
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 # ffpyplayer 是可选依赖，未安装时给出友好提示而非直接崩溃
 try:
@@ -15,6 +18,33 @@ except ImportError as e:  # pragma: no cover - 依赖环境相关
     FFPYPLAYER_IMPORT_ERROR = str(e)
     MediaPlayer = None
     set_log_callback = None
+
+
+def _ff_log_callback(level, msg):
+    """ffpyplayer/ffmpeg 内部日志回调，转发到统一日志系统。
+
+    Args:
+        level: 日志级别字符串，如 'error'、'warning'、'info'、'debug'
+        msg: 日志内容
+    """
+    msg = (msg or "").rstrip()
+    if not msg:
+        return
+    level = (level or "").lower()
+    if level == "error":
+        logger.error(f"[ffpyplayer] {msg}")
+    elif level == "warning":
+        logger.warning(f"[ffpyplayer] {msg}")
+    else:
+        logger.debug(f"[ffpyplayer:{level}] {msg}")
+
+
+# 注册 ffpyplayer 内部日志回调，捕获 ffmpeg 层错误（如解码失败、网络断开）
+if FFPYPLAYER_AVAILABLE and set_log_callback is not None:
+    try:
+        set_log_callback(_ff_log_callback)
+    except Exception:  # pragma: no cover - 回调注册失败不影响主流程
+        logger.exception("设置 ffpyplayer 日志回调失败")
 
 
 class M3U8Player:
@@ -82,11 +112,15 @@ class M3U8Player:
         Args:
             url: m3u8播放链接
         """
+        logger.info(
+            f"开始播放: url={url}, cache_size={self._cache_size}, "
+            f"cache_dir={self._cache_dir}"
+        )
         # ffpyplayer未安装时直接报错，避免后续崩溃
         if not FFPYPLAYER_AVAILABLE:
-            self._notify_error(
-                f"ffpyplayer未安装: {FFPYPLAYER_IMPORT_ERROR or '未知错误'}"
-            )
+            msg = f"ffpyplayer未安装: {FFPYPLAYER_IMPORT_ERROR or '未知错误'}"
+            logger.error(msg)
+            self._notify_error(msg)
             return
 
         # 停止当前播放，清理旧播放器实例
@@ -104,11 +138,13 @@ class M3U8Player:
                 "fflags": "nobuffer",
             }
 
+            logger.debug(f"创建 MediaPlayer: ff_opts={ff_opts}")
             self._player = MediaPlayer(
                 url,
                 loglevel="info",
                 ff_opts=ff_opts,
             )
+            logger.info("MediaPlayer 创建成功")
             self._state = "playing"
             self._notify_state()
 
@@ -119,6 +155,7 @@ class M3U8Player:
             )
             self._frame_thread.start()
         except Exception as e:
+            logger.exception(f"播放失败: url={url}")
             self._player = None
             self._notify_error(f"播放失败: {e}")
 
@@ -130,22 +167,25 @@ class M3U8Player:
         - val is None：缓冲中，无可用帧
         - val 为 (img, pts)：有帧可渲染
         """
+        logger.info("帧读取线程启动")
         while self._running and self._player is not None:
             try:
                 frame, val = self._player.get_frame()
             except Exception as e:
+                logger.exception("get_frame 抛出异常")
                 self._notify_error(f"读取帧失败: {e}")
                 break
 
             # 播放结束
             if val == "eof":
+                logger.info("播放结束(eof)")
                 self._state = "ended"
                 self._notify_state()
                 if self.on_eof:
                     try:
                         self.on_eof()
                     except Exception:
-                        pass
+                        logger.exception("on_eof 回调异常")
                 break
 
             # 缓冲中，短暂等待后重试
@@ -166,7 +206,8 @@ class M3U8Player:
                 try:
                     self.on_frame(data, width, height)
                 except Exception:
-                    pass
+                    logger.exception("on_frame 回调异常")
+        logger.info("帧读取线程退出")
 
     def _frame_to_bytes(self, img):
         """将ffpyplayer返回的帧对象转换为RGB字节数据。
@@ -192,6 +233,7 @@ class M3U8Player:
                 return img.tobytes(), width, height
             return None, 0, 0
         except Exception:
+            logger.exception("帧转换为字节失败")
             return None, 0, 0
 
     def pause(self):
@@ -229,7 +271,7 @@ class M3U8Player:
             try:
                 self._player.close()
             except Exception:
-                pass
+                logger.exception("关闭播放器实例失败")
             self._player = None
 
         # 更新状态
@@ -335,7 +377,7 @@ class M3U8Player:
             try:
                 self.on_state_changed(self._state)
             except Exception:
-                pass
+                logger.exception("on_state_changed 回调异常")
 
     def _notify_error(self, msg):
         """触发错误回调。"""
@@ -343,4 +385,4 @@ class M3U8Player:
             try:
                 self.on_error(msg)
             except Exception:
-                pass
+                logger.exception("on_error 回调异常")

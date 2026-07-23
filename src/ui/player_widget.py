@@ -3,6 +3,9 @@ from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QPainter
 
 from src.core.player import M3U8Player
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class _VideoCanvas(QWidget):
@@ -125,6 +128,7 @@ class PlayerWidget(QWidget):
         Args:
             url: m3u8播放链接
         """
+        logger.info(f"PlayerWidget.play: url={url}")
         if not url:
             self.error_occurred.emit("链接不能为空")
             return
@@ -137,7 +141,11 @@ class PlayerWidget(QWidget):
         # 启动轮询定时器获取位置和时长
         self._poll_timer.start()
         # 调用核心播放器播放
-        self._player.play(url)
+        try:
+            self._player.play(url)
+        except Exception:
+            logger.exception(f"PlayerWidget 调用 M3U8Player.play 异常: url={url}")
+            self.error_occurred.emit("播放器启动失败，请查看日志")
 
     def pause(self):
         """暂停播放。"""
@@ -236,7 +244,10 @@ class PlayerWidget(QWidget):
             pixmap = QPixmap.fromImage(qimg)
             self.render_widget.set_pixmap(pixmap)
         except Exception:
-            pass
+            logger.exception(
+                f"帧渲染失败: width={width}, height={height}, "
+                f"data_len={len(data) if data else 0}"
+            )
 
     def _on_poll_timeout(self):
         """定时轮询：获取播放位置与总时长并发射信号。"""
@@ -300,5 +311,5 @@ class PlayerWidget(QWidget):
             self._poll_timer.stop()
             self._player.stop()
         except Exception:
-            pass
+            logger.exception("关闭播放器组件时异常")
         super().closeEvent(event)
