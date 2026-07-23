@@ -2,6 +2,114 @@ import sys
 import os
 import traceback
 import tempfile
+import atexit
+
+
+def _get_crash_log_paths():
+    """按优先级返回候选崩溃日志目录列表。"""
+    paths = []
+    if getattr(sys, "frozen", False):
+        paths.append(os.path.dirname(sys.executable))
+        paths.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+    else:
+        paths.append(os.path.dirname(os.path.abspath(__file__)))
+    paths.append(tempfile.gettempdir())
+    return paths
+
+
+def _open_crash_log():
+    """在第一个可写目录中创建崩溃日志文件，返回 (文件路径, 文件对象) 或 (None, None)。"""
+    for d in _get_crash_log_paths():
+        try:
+            os.makedirs(d, exist_ok=True)
+            log_path = os.path.join(d, "m3u8_tool_crash.log")
+            # 二进制模式 + 无缓冲，确保 C 级别的 dup2 重定向也能正确写入
+            fh = open(log_path, "ab", buffering=0)
+            # 测试写入
+            fh.write(b"")
+            fh.flush()
+            return log_path, fh
+        except Exception:
+            continue
+    return None, None
+
+
+# ===== 最早期：系统级 stderr/stdout 重定向 =====
+# 使用 os.dup2() 重定向文件描述符 1(stdout) 和 2(stderr)，
+# 这样 C 扩展库（ffpyplayer/SDL/ffmpeg）直接写 fd 1/2 的输出
+# 也会被捕获到文件。这是 Python 层 sys.stderr 重定向做不到的。
+_crash_log_path = None
+_crash_fh = None
+_orig_stdout_fd = None
+_orig_stderr_fd = None
+
+try:
+    _crash_log_path, _crash_fh = _open_crash_log()
+    if _crash_fh is not None:
+        # 写入启动标记（二进制模式，手动编码）
+        import datetime
+        _ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _header = (
+            "\n" + "=" * 60 + "\n"
+            + f"[{_ts}] 进程启动 PID={os.getpid()}\n"
+            + f"[{_ts}] frozen={getattr(sys, 'frozen', False)}\n"
+            + f"[{_ts}] executable={sys.executable}\n"
+            + f"[{_ts}] argv={sys.argv}\n"
+            + f"[{_ts}] crash log -> {_crash_log_path}\n"
+            + "=" * 60 + "\n"
+        )
+        _crash_fh.write(_header.encode("utf-8", errors="replace"))
+        _crash_fh.flush()
+
+        # 保存原始 stdout/stderr 文件描述符
+        _orig_stdout_fd = os.dup(1)
+        _orig_stderr_fd = os.dup(2)
+
+        # 系统级重定向：把 fd 1 和 2 都指向崩溃日志文件
+        os.dup2(_crash_fh.fileno(), 1)
+        os.dup2(_crash_fh.fileno(), 2)
+
+        # 同时更新 Python 层的 sys.stdout/sys.stderr
+        sys.stdout = _crash_fh
+        sys.stderr = _crash_fh
+
+        print(f"[{_ts}] stderr/stdout 重定向完成 -> {_crash_log_path}", flush=True)
+except Exception as _e:
+    # 如果重定向失败，尽量保留原始状态
+    try:
+        if _orig_stdout_fd is not None:
+            os.dup2(_orig_stdout_fd, 1)
+        if _orig_stderr_fd is not None:
+            os.dup2(_orig_stderr_fd, 2)
+    except Exception:
+        pass
+    _crash_log_path = None
+    if _crash_fh is not None:
+        try:
+            _crash_fh.close()
+        except Exception:
+            pass
+        _crash_fh = None
+
+
+def _on_exit():
+    """进程退出回调：在崩溃日志中写入退出标记。"""
+    if _crash_fh is None:
+        return
+    try:
+        import datetime
+        _ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _msg = f"[{_ts}] 进程正常退出 PID={os.getpid()}\n"
+        _crash_fh.write(_msg.encode("utf-8", errors="replace"))
+        _crash_fh.flush()
+    except Exception:
+        pass
+
+
+try:
+    atexit.register(_on_exit)
+except Exception:
+    pass
 
 
 def _emergency_log(msg):
